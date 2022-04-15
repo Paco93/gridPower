@@ -61,6 +61,11 @@ def _init_influxdb_database():
     if len(list(filter(lambda x: x['name'] == INFLUXDB_DATABASE, databases))) == 0:
         influxdb_client.create_database(INFLUXDB_DATABASE)
     influxdb_client.switch_database(INFLUXDB_DATABASE)
+    
+    retentionPolicies=influxdb_client.get_list_retention_policies(database=INFLUXDB_DATABASE)
+    #if len(retentionPolicies) <2:
+    if len(list(filter(lambda x: x['name'] == 'Day_Data', retentionPolicies))) == 0:
+        influxdb_client.create_retention_policy('Day_Data', 'INF', '1', database=INFLUXDB_DATABASE,   default=False, shard_duration="0s")
     return influxdb_client
 
 
