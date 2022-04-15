@@ -1,0 +1,16 @@
+[Unit]
+Description=My script to feed influxdB with Huawei Invert statistics
+#Requires=influxd.service
+Requires=docker.service
+#After=network.target influxd.service
+After=network.target docker.service 
+
+[Service]
+Restart=always
+RestartSec=60
+TimeoutStopSec=360
+ExecStart=/usr/bin/python3 /home/pi/sw/gridPower/getGridPower.py > /home/pi/sw/gridPower/inverter.log 2>&1
+User=pi
+
+[Install]
+WantedBy=multi-user.target
