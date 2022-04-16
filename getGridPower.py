@@ -17,6 +17,7 @@ import requests
 from influxdb import InfluxDBClient
 import swConfig
 import socket
+import influxHelper
 
 if(swConfig.ENABLE_FORECAST):
     import solcast
@@ -40,40 +41,8 @@ def todayAt (hr, min=0, sec=0, micros=0):
    return now.replace(hour=hr, minute=min, second=sec, microsecond=micros)    
 
 
-def _init_influxdb_database():
-    INFLUXDB_ADDRESS = swConfig.INFLUXDB_ADDRESS
-    INFLUXDB_USER = swConfig.INFLUXDB_USER
-    INFLUXDB_PASSWORD = swConfig.INFLUXDB_PASSWORD
-    INFLUXDB_DATABASE = swConfig.INFLUXDB_DATABASE
-    influxdb_client = InfluxDBClient(INFLUXDB_ADDRESS, 8086, INFLUXDB_USER, INFLUXDB_PASSWORD, None)
-    notConnected=True
-    count=0
-    while(notConnected):
-        try:
-            databases = influxdb_client.get_list_database()
-            notConnected=False
-        except:
-            count +=1
-            time.sleep(10)
-            if (count > 30):
-                return None
-
-    if len(list(filter(lambda x: x['name'] == INFLUXDB_DATABASE, databases))) == 0:
-        influxdb_client.create_database(INFLUXDB_DATABASE)
-    influxdb_client.switch_database(INFLUXDB_DATABASE)
-
-    retentionPolicies=influxdb_client.get_list_retention_policies(database=INFLUXDB_DATABASE)
-    #if len(retentionPolicies) <2:
-    if len(list(filter(lambda x: x['name'] == 'Day_Data', retentionPolicies))) == 0:
-        influxdb_client.create_retention_policy('Day_Data', 'INF', '1', database=INFLUXDB_DATABASE,   default=False, shard_duration="0s")
-    return influxdb_client
-
-
 def gridPower():
     response = requests.get(swConfig.SHELLY_HTTP_REQ_URL) 
-    #a['emeters'] example is
-    #[{"power":-699.18,"reactive":238.15,"pf":-0.95,"voltage":235.42,"is_valid":true,"total":1609373.7,"total_returned":3480157.1},/
-    # {"power":823.81,"reactive":-73.60,"pf":-1.00,"voltage":235.42,"is_valid":true,"total":3332254.9,"total_returned":564.9}]
     a=response.json()
     ret=a['emeters']
     return ret
@@ -171,25 +140,11 @@ async def active_pow(influxdb_client, inverter_dict):
                             'grid_PF'      :  grid_PF,
                             'invert_PF'    :  invert_PF
                         }
-                    write_influx(influxdb_client, measurement, "gridPower", swConfig.INFLUXDB_DATABASE)
-                    '''json_body = [
-                        {
-                        'measurement': "gridPower",
-                        'tags': {
-                            'location': swConfig.LOCATION            },
-                        'fields': {
-                            'gridPower'    : gridPow,
-                            'inverterPower': inverterPow,
-                            'homePower'    : homePow,
-                            'inverterDayPower' : inverter_dict['inverterDayPower'],
-                            'acVolt'       :  acVolt,
-                            'grid_PF'      :  grid_PF,
-                            'invert_PF'    :  invert_PF
-                        }
-                        }
-                    ]           
-                    influxdb_client.write_points(json_body)
-                    '''
+                    try:
+                        influxHelper.write_influx(influxdb_client, measurement, "gridPower", swConfig.INFLUXDB_DATABASE)
+                    except influxHelper.InfluxDBError as e:
+                        logger.error("write_influx error: %s", str(e))
+
                 else:
                     logger.warning("Shelly measures not valid")
                 
@@ -304,33 +259,6 @@ async def  isDay(influxdb_client, inverter_dict):
 
 
 
-def write_influx(flux_client, measurement, iden, db, t = 0):  #used by forcast
-    if flux_client is not None:
-        metrics = {}
-        tags = {}
-        if t > 100000000000:
-            metrics['time'] = t
-
-        metrics['measurement'] = iden
-        tags['location'] = swConfig.LOCATION
-
-        metrics['tags'] = tags
-        metrics['fields'] = measurement
-        metrics =[metrics, ]
-        try:
-            target=flux_client.write_points(metrics, database=db)
-            if not target:
-                logger.error("Error writing to influx.")
-            return target
-
-        except Exception as e:
-            logger.error("write_influx error: %s", str(e))
-            if swConfig.debug_print:
-                print("error")
-                print(metrics)
-                print(db)
-                print()
-            return False
 
 def getSolcastForecasts(influxdb_client):
     if(swConfig.ENABLE_FORECAST):
@@ -348,8 +276,10 @@ def getSolcastForecasts(influxdb_client):
                     'power90': float(x['pv_estimate90']) }
 
                 forecast_array[int(dt)] =  float(x['pv_estimate'])
-
-                write_influx(influxdb_client, measurement, "forcast", swConfig.INFLUXDB_DATABASE, int(dt) * 1000000000)
+                try:
+                    influxHelper.write_influx(influxdb_client, measurement, "forcast", swConfig.INFLUXDB_DATABASE, int(dt) * 1000000000)
+                except influxHelper.InfluxDBError as e:
+                    logger.error("write_influx error: %s", str(e))
             logger.info("done getting forecast")
         except Exception as e:
             logger.error("Error getting Solcast Forecast: %s", str(e))
@@ -576,7 +506,7 @@ def main():
     inverter_data = {'activeState': True, 'inverterBasePower': None,'gridBasePower':None, 'inverterDayPower':0.0, 'inverterPow':0.0, 'acVolt':230.0}
 
     logger.info('Grid Measure started')
-    influxdb_client=_init_influxdb_database()
+    influxdb_client=influxHelper._init_influxdb_database()
     if(influxdb_client==None):
         logger.error("No InfluxDB instance. Program Terminated")
         return
