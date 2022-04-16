@@ -1,2 +1,0 @@
-require pip3 install pytz, isodate, influxdb, suntime 
-copy Shelly.service to /lib/systemd/system/Shelly.service
