@@ -9,16 +9,16 @@ LOG_FILENAME='/home/pi/sw/gridPower/grid.log'
 SHELLY_HTTP_REQ_URL = 'http://ip_address/status/emeter/0'
 SHELLY_NEW_FW= True
 
-USE_SHELLY_CoIoT = True ## Only False is currently supported
+USE_SHELLY_CoIoT = True # if True then CoIoT is used for acquiring Shelly measurements. Otherwise HTTP request are used 
 MCAST_GRP='224.0.1.187'
 MCAST_PORT= 5683
 
-ENABLE_FORECAST= True
+ENABLE_FORECAST= True # Set to False if you don't have a Solcast account  
 SOLCAST_KEY = "key"
 INSTALL_DATE = "2021-01-01"
 SOLCAST_SITE_UUID = "uuid"
 
-ENABLE_PV_OUTPUT= True
+ENABLE_PV_OUTPUT= True  # Set to False if you don't have a pvoutput account 
 PV_OUTPUT_STATUS_URL = "https://pvoutput.org/service/r2/addstatus.jsp"
 PV_OUTPUT_ADD_URL    = "https://pvoutput.org/service/r2/addoutput.jsp"
 PV_OUTPUT_API_KEY = 'pv_key'
