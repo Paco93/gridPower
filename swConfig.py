@@ -9,7 +9,7 @@ LOG_FILENAME='/home/pi/sw/gridPower/grid.log'
 SHELLY_HTTP_REQ_URL = 'http://ip_address/status/emeter/0'
 SHELLY_NEW_FW= True
 
-USE_SHELLY_CoIoT = True # if True then CoIoT is used for acquiring Shelly measurements. Otherwise HTTP request are used 
+USE_SHELLY_CoIoT = True # if True then CoIoT is used for acquiring Shelly measurements. Otherwise HTTP requests are used 
 MCAST_GRP='224.0.1.187'
 MCAST_PORT= 5683
 
