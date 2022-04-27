@@ -411,7 +411,7 @@ def logActivePower(influxdb_client, inverter_dict, measures):
         decimCount=decimCount+1
     
 
-class EchoClientProtocol:
+class UDP_Multicast_Client:
     def __init__(self, influxdb_client, inverterDict, on_con_lost):
         self.influxdb_client = influxdb_client
         self.on_con_lost = on_con_lost
@@ -421,13 +421,8 @@ class EchoClientProtocol:
 
     def connection_made(self, transport):
         self.transport = transport
-        #sock = transport.get_extra_info("socket")
-        #print('Send:', self.message)
-        #self.transport.sendto(self.message.encode())
 
     def datagram_received(self, data, addr):
-        #tt=time.localtime()
-        #print(time.strftime("%H:%M:%S",tt))
         try:
             s=str(data)
             a=s.split('xff')
@@ -491,7 +486,7 @@ async def multicast_reader(influxdb_client, inverter_dict):
     
 
     transport, protocol = await loop.create_datagram_endpoint(
-        lambda: EchoClientProtocol(influxdb_client, inverter_dict, on_con_lost), sock=sock) 
+        lambda: UDP_Multicast_Client(influxdb_client, inverter_dict, on_con_lost), sock=sock) 
 
     try:
         await on_con_lost
