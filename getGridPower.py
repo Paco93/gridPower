@@ -471,7 +471,6 @@ async def multicast_reader(influxdb_client, inverter_dict):
     # low-level APIs.
     loop = asyncio.get_running_loop()
     on_con_lost = loop.create_future()
-    message = "Hello World!"
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
