@@ -8,7 +8,7 @@ config_debug=False
 fromaddr = swConfig.EMAIL_FROM
 toaddrs = swConfig.EMAIL_TO
 mail_server = swConfig.EMAIL_SERVER
-mail_pass = swConfig.EMAIL_SERVER
+mail_pass = swConfig.EMAIL_PASS
 mail_port = swConfig.EMAIL_PORT
 
 
