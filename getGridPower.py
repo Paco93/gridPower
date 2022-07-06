@@ -131,6 +131,7 @@ async def active_pow(influxdb_client, inverter_dict):
                     inverter_dict['inverterDayPower'] = inverterTotPower-inverter_dict['inverterBasePower']
                     inverter_dict['inverterPow']=  inverterPow
                     inverter_dict['acVolt'] =acVolt
+                    inverter_dict['homePower']=homePow
                     measurement={
                             'gridPower'    : gridPow,
                             'inverterPower': inverterPow,
@@ -216,7 +217,9 @@ async def  isDay(influxdb_client, inverter_dict):
             timeHome = datetime.datetime.now()
             strDate=timeHome.strftime( "%Y-%m-%d %H:%M:%S %Z%z")
             finStr= strDate + " End of Active Day.<br> " + "   - Inverter daily production was: "+ invDayPowStr +" Wh\n"
+            logger.debug("Checking whether email has to be sent")
             if(swConfig.ENABLE_EMAIL):
+                logger.debug("Sending daily email")
                 emails.send_mail(finStr)
             await asyncio.sleep(secs2MidNigth+120)
             try:
@@ -315,7 +318,7 @@ async def  pvOutputService(inverter_dict):
         try:
             if((invPower > 0 or last_activePower > 0) and inverter_dict['activeState']):
                 #payload = "?d={}&t={}&v1={}&v2={}&v5={}&v6={}".format(dt.strftime("%Y%m%d"), dt.strftime("%H:%M"), str(inverter_dict['inverterDayPower']), str(inverterPow),str(temperature), str(acVolt))
-                payload = "?d={}&t={}&v1={}&v2={}&v6={}".format(dt.strftime("%Y%m%d"), dt.strftime("%H:%M"), str(inverter_dict['inverterDayPower']), str(invPower), inverter_dict['acVolt'])
+                payload = "?d={}&t={}&v1={}&v2={}&v4={}&v6={}".format(dt.strftime("%Y%m%d"), dt.strftime("%H:%M"), str(inverter_dict['inverterDayPower']), str(invPower), inverter_dict['homePower'], inverter_dict['acVolt'])
                 response = requests.get(url+payload, headers=headers)
                 response.raise_for_status()
                 last_activePower= invPower
@@ -339,7 +342,7 @@ def pvDayOutputs(fromGridDayPower, energy_exported, invert_dailyPow):
     now=datetime.date.fromtimestamp(time.time()-10800)
     try:
         invDayP=int(invert_dailyPow+0.5)
-        payload = "?d={}&g={}&e={}&c={}".format(now.strftime("%Y%m%d"), str(invDayP), str(int(energy_exported+0.5)),str(energy_consumed))
+        payload = "?d={}&g={}&e={}&ip={}&c={}".format(now.strftime("%Y%m%d"), str(invDayP), str(int(energy_exported+0.5)),str(fromGridDayPower),str(energy_consumed))
         #print(payload)
         response = requests.get(url+payload, headers=headers)
         response.raise_for_status()
@@ -421,8 +424,13 @@ class UDP_Multicast_Client:
 
     def connection_made(self, transport):
         self.transport = transport
+        #sock = transport.get_extra_info("socket")
+        #print('Send:', self.message)
+        #self.transport.sendto(self.message.encode())
 
     def datagram_received(self, data, addr):
+        #tt=time.localtime()
+        #print(time.strftime("%H:%M:%S",tt))
         try:
             s=str(data)
             a=s.split('xff')
@@ -471,12 +479,13 @@ async def multicast_reader(influxdb_client, inverter_dict):
     # low-level APIs.
     loop = asyncio.get_running_loop()
     on_con_lost = loop.create_future()
+    message = "Hello World!"
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     #sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 32) 
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 10) 
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1) #ridondante
     sock.bind((swConfig.MCAST_GRP, swConfig.MCAST_PORT))
 
     host = socket.gethostbyname(socket.gethostname())
@@ -497,7 +506,7 @@ def main():
     global t2
     global t3
    
-    inverter_data = {'activeState': True, 'inverterBasePower': None,'gridBasePower':None, 'inverterDayPower':0.0, 'inverterPow':0.0, 'acVolt':230.0}
+    inverter_data = {'activeState': True, 'inverterBasePower': None,'gridBasePower':None, 'inverterDayPower':0.0, 'inverterPow':0.0, 'homePower': 0, 'acVolt':230.0}
 
     logger.info('Grid Measure started')
     influxdb_client=influxHelper._init_influxdb_database()
