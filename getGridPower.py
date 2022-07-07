@@ -33,6 +33,9 @@ t1=None
 t2=None
 t3=None
 
+inverter_channel=swConfig.inverter_channel #this is the Shelly EM channel number of the CT measuring the inverter production 
+grid_channel=swConfig.grid_channel     #this is the Shelly EM channel number of the CT measuring power to/from the grid 
+
 closeTheSocket=False
 
 decimCount=0
@@ -45,8 +48,9 @@ def todayAt (hr, min=0, sec=0, micros=0):
 def gridPower():
     response = requests.get(swConfig.SHELLY_HTTP_REQ_URL) 
     a=response.json()
-    ret=a['emeters']
-    return ret
+    ret_0=a['emeters'][grid_channel]
+    ret_1=a['emeters'][inverter_channel]
+    return ret_0, ret_1 
 
 def computePowerFactors(gridPow,gridReact, inverterPow, inverterReact ):
     den=math.sqrt(gridReact**2+gridPow**2)
@@ -107,13 +111,13 @@ async def active_pow(influxdb_client, inverter_dict):
             if(k >= 30):
                 k=0 
             if(inverter_dict['activeState'] or k==0):
-                a=gridPower()
-                gridPow       = a[0]['power']
-                gridTotalPow  = a[0]['total']
-                gridReturnPow = a[0]['total_returned']
-                acVolt        = a[1]['voltage']
-                inverterPow   = a[1]['power']
-                inverterTotPower= a[1]['total'] 
+                aG, aI=gridPower()
+                gridPow       = aG['power']
+                gridTotalPow  = aG['total']
+                gridReturnPow = aG['total_returned']
+                acVolt        = aI['voltage']
+                inverterPow   = aI['power']
+                inverterTotPower= aI['total'] 
                 if(inverterPow >= 0):
                     invP=inverterPow
                 else:
@@ -121,13 +125,13 @@ async def active_pow(influxdb_client, inverter_dict):
                 homePow=gridPow+ invP
 
                 if(swConfig.SHELLY_NEW_FW== False): 
-                    gridReact     = a[0]['reactive']
-                    inverterReact = a[1]['reactive']
+                    gridReact     = aG['reactive']
+                    inverterReact = aG['reactive']
                     grid_PF, invert_PF = computePowerFactors(gridPow,gridReact, inverterPow, inverterReact )
                 else:
-                    grid_PF   = a[0]['pf']
-                    invert_PF = a[1]['pf']
-                    isMeasurementValid = a[0]['is_valid'] and a[1]['is_valid']
+                    grid_PF   = aG['pf']
+                    invert_PF = aI['pf']
+                    isMeasurementValid = aG['is_valid'] and aI['is_valid']
                 if(isMeasurementValid):
                     invert_dailyPow = inverterTotPower-inverter_dict['inverterBasePower']
                     inverter_dict['inverterDayPower'] = invert_dailyPow 
@@ -250,7 +254,7 @@ async def  isDay(influxdb_client, inverter_dict):
                     'tags': {
                         'location': swConfig.LOCATION           },
                     'fields': {
-                        'dayGridPower'   : dayGridPowerConsumpt  ,
+                        'dayGridPower'   : dayGridPowerConsumpt,
                         'homeDayPower'   : dayHomePower,
                         'invertDayPower' : invertDailyPow,
                         'toGridDayPower' : toGridDayPower
@@ -363,20 +367,20 @@ def logActivePower(influxdb_client, inverter_dict, measures):  # used if swConfi
         if(decimCount >= 30):
                 decimCount=0 
         if(inverter_dict['activeState'] or decimCount==0):
-                gridPow       = measures[0]['power']
-                gridTotalPow  = measures[0]['total']
-                gridReturnPow = measures[0]['total_returned']
-                acVolt        = measures[1]['voltage']
-                inverterPow   = measures[1]['power']
-                inverterTotPower= measures[1]['total'] 
+                gridPow       = measures[grid_channel]['power']
+                gridTotalPow  = measures[grid_channel]['total']
+                gridReturnPow = measures[grid_channel]['total_returned']
+                acVolt        = measures[inverter_channel]['voltage']
+                inverterPow   = measures[inverter_channel]['power']
+                inverterTotPower= measures[inverter_channel]['total'] 
                 if(inverterPow >= 0):
                     invP=inverterPow
                 else:
                     invP=0
                 homePow=gridPow+ invP
 
-                grid_PF   = measures[0]['pf']
-                invert_PF = measures[1]['pf']
+                grid_PF   = measures[grid_channel]['pf']
+                invert_PF = measures[inverter_channel]['pf']
   
                 invert_dailyPow = inverterTotPower-inverter_dict['inverterBasePower']
                 inverter_dict['inverterDayPower'] = invert_dailyPow 
@@ -533,16 +537,16 @@ def main():
 
     getSolcastForecasts(influxdb_client)  
 
-    a=gridPower()
+    aG, aI=gridPower()
     inverter_data['inverterBasePower']= getMeasurementAtDayStart(influxdb_client, "gridTotal" , "inverterTotPower" )
     inverter_data['gridBasePower']= getMeasurementAtDayStart(influxdb_client, "gridTotal" , "gridTotalPower" )     
     returnBasePower=getMeasurementAtDayStart(influxdb_client, "gridTotal" , "gridReturnPower" )
     if(inverter_data['inverterBasePower'] is None):
-        inverter_data['inverterBasePower']= a[1]['total'] 
+        inverter_data['inverterBasePower']= aI['total'] 
     if(inverter_data['gridBasePower'] is None):
-        inverter_data['gridBasePower']= a[0]['total']
+        inverter_data['gridBasePower']= aG['total']
     if(returnBasePower is None):
-        returnBasePower= a[0]['total_returned']
+        returnBasePower= aG['total_returned']
     
     loop = asyncio.get_event_loop()
     if(swConfig.USE_SHELLY_CoIoT):
