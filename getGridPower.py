@@ -23,7 +23,8 @@ if(swConfig.ENABLE_FORECAST):
     import solcast
 
 
-runLoop=True
+runLoop = True
+returnBasePower = None
 
 logging.basicConfig( level=logging.INFO, filename=swConfig.LOG_FILENAME, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger=logging.getLogger('Grid')
@@ -128,10 +129,16 @@ async def active_pow(influxdb_client, inverter_dict):
                     invert_PF = a[1]['pf']
                     isMeasurementValid = a[0]['is_valid'] and a[1]['is_valid']
                 if(isMeasurementValid):
-                    inverter_dict['inverterDayPower'] = inverterTotPower-inverter_dict['inverterBasePower']
+                    invert_dailyPow = inverterTotPower-inverter_dict['inverterBasePower']
+                    inverter_dict['inverterDayPower'] = invert_dailyPow 
                     inverter_dict['inverterPow']=  inverterPow
                     inverter_dict['acVolt'] =acVolt
-                    inverter_dict['homePower']=homePow
+                    inverter_dict['homePower']=int(homePow+0.5)
+
+                    gridDayPower=  gridTotalPow - inverter_dict['gridBasePower']  
+                    energy_exported = gridReturnPow - returnBasePower
+                    energy_consumed = int(invert_dailyPow - energy_exported + gridDayPower+0.5)
+                    inverter_dict['homeEnergy'] = int(energy_consumed+0.5)
                     measurement={
                             'gridPower'    : gridPow,
                             'inverterPower': inverterPow,
@@ -150,7 +157,6 @@ async def active_pow(influxdb_client, inverter_dict):
                     logger.warning("Shelly measures not valid")
                 
                 if(k==0):
-                    gridDayPower=  gridTotalPow - inverter_dict['gridBasePower']   
                     json_body_2 = [
                     {
                     'measurement': "gridTotal",
@@ -176,6 +182,7 @@ async def active_pow(influxdb_client, inverter_dict):
 
 async def  isDay(influxdb_client, inverter_dict):
     global runLoop
+    global returnBasePower
     returnBasePower=getMeasurementAtDayStart(influxdb_client, "gridTotal" , "gridReturnPower" )
     sun = Sun(swConfig.latitude, swConfig.longitude)
     while(runLoop):
@@ -318,7 +325,7 @@ async def  pvOutputService(inverter_dict):
         try:
             if((invPower > 0 or last_activePower > 0) and inverter_dict['activeState']):
                 #payload = "?d={}&t={}&v1={}&v2={}&v5={}&v6={}".format(dt.strftime("%Y%m%d"), dt.strftime("%H:%M"), str(inverter_dict['inverterDayPower']), str(inverterPow),str(temperature), str(acVolt))
-                payload = "?d={}&t={}&v1={}&v2={}&v4={}&v6={}".format(dt.strftime("%Y%m%d"), dt.strftime("%H:%M"), str(inverter_dict['inverterDayPower']), str(invPower), inverter_dict['homePower'], inverter_dict['acVolt'])
+                payload = "?d={}&t={}&v1={}&v2={}&v3={}&v4={}&v6={}".format(dt.strftime("%Y%m%d"), dt.strftime("%H:%M"), str(inverter_dict['inverterDayPower']), str(invPower), inverter_dict['homeEnergy'], inverter_dict['homePower'], inverter_dict['acVolt'])
                 response = requests.get(url+payload, headers=headers)
                 response.raise_for_status()
                 last_activePower= invPower
@@ -342,7 +349,7 @@ def pvDayOutputs(fromGridDayPower, energy_exported, invert_dailyPow):
     now=datetime.date.fromtimestamp(time.time()-10800)
     try:
         invDayP=int(invert_dailyPow+0.5)
-        payload = "?d={}&g={}&e={}&ip={}&c={}".format(now.strftime("%Y%m%d"), str(invDayP), str(int(energy_exported+0.5)),str(fromGridDayPower),str(energy_consumed))
+        payload = "?d={}&g={}&e={}&ip={}&c={}".format(now.strftime("%Y%m%d"), str(invDayP), str(int(energy_exported+0.5)),str(int(fromGridDayPower+0.5)),str(energy_consumed))
         #print(payload)
         response = requests.get(url+payload, headers=headers)
         response.raise_for_status()
@@ -350,7 +357,7 @@ def pvDayOutputs(fromGridDayPower, energy_exported, invert_dailyPow):
         logger.error("Fetching '{}' failed! Error: {}".format(url+payload, e))
 
 
-def logActivePower(influxdb_client, inverter_dict, measures):
+def logActivePower(influxdb_client, inverter_dict, measures):  # used if swConfig.USE_SHELLY_CoIoT is True in place of the task active_pow
     global decimCount
     try:
         if(decimCount >= 30):
@@ -370,9 +377,18 @@ def logActivePower(influxdb_client, inverter_dict, measures):
 
                 grid_PF   = measures[0]['pf']
                 invert_PF = measures[1]['pf']
-                inverter_dict['inverterDayPower'] = inverterTotPower-inverter_dict['inverterBasePower']
+  
+                invert_dailyPow = inverterTotPower-inverter_dict['inverterBasePower']
+                inverter_dict['inverterDayPower'] = invert_dailyPow 
                 inverter_dict['inverterPow']=  inverterPow
                 inverter_dict['acVolt'] =acVolt
+                inverter_dict['homePower']=homePow
+
+                gridDayPower=  gridTotalPow - inverter_dict['gridBasePower']  
+                energy_exported = gridReturnPow - returnBasePower
+                energy_consumed = int(invert_dailyPow - energy_exported + gridDayPower+0.5)
+                inverter_dict['homeEnergy'] = energy_consumed
+  
                 json_body = [
                         {
                         'measurement': "gridPower",
@@ -505,8 +521,9 @@ def main():
     global t1
     global t2
     global t3
-   
-    inverter_data = {'activeState': True, 'inverterBasePower': None,'gridBasePower':None, 'inverterDayPower':0.0, 'inverterPow':0.0, 'homePower': 0, 'acVolt':230.0}
+    global returnBasePower
+
+    inverter_data = {'activeState': True, 'inverterBasePower': None,'gridBasePower':None, 'inverterDayPower':0.0, 'inverterPow':0.0, 'homePower': 0, 'homeEnergy': 0, 'acVolt':230.0}
 
     logger.info('Grid Measure started')
     influxdb_client=influxHelper._init_influxdb_database()
@@ -515,13 +532,18 @@ def main():
         return
 
     getSolcastForecasts(influxdb_client)  
+
     a=gridPower()
     inverter_data['inverterBasePower']= getMeasurementAtDayStart(influxdb_client, "gridTotal" , "inverterTotPower" )
-    inverter_data['gridBasePower']= getMeasurementAtDayStart(influxdb_client, "gridTotal" , "gridTotalPower" )
+    inverter_data['gridBasePower']= getMeasurementAtDayStart(influxdb_client, "gridTotal" , "gridTotalPower" )     
+    returnBasePower=getMeasurementAtDayStart(influxdb_client, "gridTotal" , "gridReturnPower" )
     if(inverter_data['inverterBasePower'] is None):
         inverter_data['inverterBasePower']= a[1]['total'] 
     if(inverter_data['gridBasePower'] is None):
         inverter_data['gridBasePower']= a[0]['total']
+    if(returnBasePower is None):
+        returnBasePower= a[0]['total_returned']
+    
     loop = asyncio.get_event_loop()
     if(swConfig.USE_SHELLY_CoIoT):
         t1 = loop.create_task(multicast_reader(influxdb_client, inverter_data))
